@@ -1,0 +1,1652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<title>Treatment</title>
+<link rel="stylesheet" href="css/jquery-ui-1.13.2.min.css" type="text/css">
+<script type="text/javascript" src="javascript/jquery-3.7.0.min.js"></script>
+<script type="text/javascript" src="javascript/jquery-migrate-3.4.1.min.js"></script>
+<script type="text/javascript" src="javascript/jquery-ui-1.13.2.min.js"></script>
+<script type="text/javascript" src="javascript/jquery-match-height-0.7.2.min.js"></script>
+<script type="text/javascript" src="javascript/jquery-touch-punch-0.2.3.min.js"></script>
+<script type="text/javascript" src="javascript/jquery-mask-1.14.11.min.js"></script>
+<script type="text/javascript" src="javascript/jquery-utils.min.js"></script>
+<link rel="stylesheet" href="css/font-awesome.min.css" type="text/css">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="css/maven-bootstrap.min.css" type="text/css">
+<script type="text/javascript" src="javascript/bootstrap.min.js"></script>
+<link rel="stylesheet" href="css/jquery-datatables-1.10.23.min.css" type="text/css">
+<script type="text/javascript" src="javascript/jquery-datatables-1.10.23.min.js"></script>
+<script type="text/javascript" src="javascript/moment.min.js"></script>
+<script type="text/javascript" src="javascript/datetime-moment.min.js"></script><script type="text/javascript" src="javascript/signature_pad-2.2.0.min.js"></script>
+<script type="text/javascript" src="javascript/SigWebTablet.min.js"></script>
+<link rel="stylesheet" href="css/jquery-datatables-responsive-1.0.7.min.css" type="text/css">
+<link rel="stylesheet" href="css/jquery-datatables-buttons-1.2.2.min.css" type="text/css">
+<link rel="stylesheet" href="css/jquery-datatables-select-1.2.0.min.css" type="text/css">
+<link rel="stylesheet" href="css/jquery-datatables-bootstrap.min.css" type="text/css">
+<script type="text/javascript" src="javascript/jquery-datatables-responsive-2.1.1.min.js"></script>
+<script type="text/javascript" src="javascript/jquery-datatables-responsive-2.1.1-maven.min.js"></script>
+<script type="text/javascript" src="javascript/jquery-datatables-buttons-1.2.2.min.js"></script>
+<script type="text/javascript" src="javascript/jquery-datatables-buttons-colvis.min.js"></script>
+<script type="text/javascript" src="javascript/jquery-datatables-select-1.2.0.min.js"></script>
+<script type="text/javascript" src="javascript/jquery-datatables-bootstrap.min.js"></script>
+<script type="text/javascript" src="javascript/moment.min.js"></script>
+<script type="text/javascript" src="javascript/datetime-moment.min.js"></script><script type="text/javascript" src="javascript/jquery-multiple-select-1.2.1.min.js"></script>
+<link rel="stylesheet" type="text/css" href="css/jquery-multiple-select-1.2.1.min.css">
+<link rel="stylesheet" href="css/jquery-qtip-3.0.3.min.css" type="text/css">
+<script type="text/javascript" src="javascript/jquery-qtip-3.0.3.min.js"></script>
+<script type="text/javascript" src="javascript/maven-responsive.min.js?v=6.8.202307111805"></script>
+
+<style>
+    .ui-widget-header {
+        background-image: linear-gradient(to bottom, #4477AA 0%, #224364 100%);
+    }
+</style>
+<SCRIPT type="text/javascript" src="javascript/QuestionPackage.min.js"></SCRIPT>
+<SCRIPT type="text/javascript">
+var requestInProgress=false;
+var fullSubmitDone=false;
+$(function() {
+    // Override the submitForm function
+    submitForm=function(submitType) {
+        clearReloadTimer();
+        if(fullSubmitDone || requestInProgress) {
+            // Request in progress
+            return;
+        }
+        fullSubmitDone=(submitType=="Save" || submitType=="Refresh");
+        if(!fullSubmitDone && submitType=="TriggerEvent") {
+            var redirectContextParameter = "$Redirect";
+            var eventContext = getPrimaryForm().context.value;
+            fullSubmitDone=eventContext.indexOf(redirectContextParameter) >= 0;
+        }
+        requestInProgress=true;
+        performAjaxCall(["entireDiv","qpStatusDiv","errorDivWrapper"], submitType, fullSubmitDone);
+        // Fix for MVN-7376
+        ignoreEventsFlag=true;
+        reloadTimerID=setTimeout(function() { ignoreEventsFlag=false; }, 500);
+        //Clear the ui event type to prevent double triggering of question package UI events
+        getPrimaryForm().uiEventType.value='';
+    }
+});
+
+// Custom dialog for jumping
+$(document).ready(function() {
+    $.fn.bootstrapBtn = $.fn.button.noConflict();
+    $("#dialog-jump").dialog( {
+        autoOpen: false,
+        resizable: false,
+        height: "auto",
+        width: "auto",
+        modal: true,
+        close: function() {
+            wasSubmitted = false;
+        },
+        buttons: {
+            "Save and jump": function() {
+                // handle save and jump
+                if($(this).data("isRedirectEvent")) {
+                    var primaryForm = getPrimaryForm();
+                    primaryForm.quickSave.value = true;
+                    primaryForm.context.value += ", $Save";
+                } else {
+                    var url = $(this).data("url");
+                    appendHiddenElement(getPrimaryForm(), "navigationBar", url);
+                }
+                saveForm();
+                $(this).dialog("close");
+            },
+            "Jump without saving": function() {
+                // handle jump only
+                if($(this).data("isRedirectEvent")) {
+                    submitForm("TriggerEvent");
+                } else {
+                    var url = $(this).data("url");
+                    document.location.href=url;
+                }
+                $(this).dialog("close");
+            },
+            "Don't jump (Don't save)" : function() {
+                // handle no jump no save
+                $(this).dialog("close");
+            }
+        }
+    });
+    // MVN-9408 detect "alt + t", which is the hotkey for save and stay, rather than using "accessKey"
+    document.addEventListener("keydown", function(e) {
+        if(e.altKey && e.keyCode == 84) {
+            $("#quickSaveButton").click();
+        }
+    });
+});
+
+function confirmExit(url) {
+    getPrimaryForm().urlToOpen.value='/'+url;
+    warnAndJump(url, false);
+}
+
+function editAssociatedContactPoint(contactPointID, questionBlock, iteration) {
+    getPrimaryForm().contactPointID.value = contactPointID;
+    getPrimaryForm().contactPointQuestionBlock.value = questionBlock;
+    getPrimaryForm().contactPointIteration.value = iteration;
+    if(submitForm) {
+        submitForm("editAssociatedContactPoint");
+    }
+}
+
+
+function openContactPointPicker(currentElement, questionBlock, iteration) {
+    closeGlobalChildWindows();
+    var popupURL = 'chooseAssociatedContactPoint.do';
+    popupURL = appendToURL(popupURL, "questionBlock", questionBlock, false);
+    if(!iteration && currentElement) {
+        //Get the current iteration of the picker, from the field id.  Because the
+        // picker is a message only type question, the field ID is the id of a div wrapping the current element
+        var idDiv = $(currentElement).closest("div");
+        if(idDiv) {
+            var pickerID = idDiv.attr("id");
+            populateFormFocusElement(pickerID, false);
+            if(pickerID) {
+                iteration = pickerID.substring(pickerID.lastIndexOf("_00_")+4);
+            }
+        }
+    }
+    //If the current iteration could not be found, use 0
+    if(!iteration) {
+        iteration = 0;
+    }
+    popupURL = appendToURL(popupURL, "iteration", iteration, true);
+    caseContactPointWindow = openPopupURL(popupURL,'ChooseAssociatedContactPoint',950,600);
+}
+
+var skipDefaultFocus=false;
+
+/**
+* Trigger a question package UI event
+* @param currentElement - should always be set to "this".  Used to find iteration of the element that triggered the event
+* @param type - type of question package UI event
+* @param context - context on the UI event
+ */
+function triggerEvent(currentElement, type, context) {
+    var elementIDContextParameter = "$ElementID";
+    context = context ? context : '';
+    if(context.indexOf(elementIDContextParameter) < 0) {
+        //Include the element ID of the element that triggered this event in the context
+        var elementID = $(currentElement).attr("id");
+        if(!elementID) {
+            //Element ID of a message-only question is obtained from the closest div element.
+            var idDiv = $(currentElement).closest("div");
+            if (idDiv) {
+                elementID = idDiv.attr("id");
+            }
+        }
+        if(elementID) {
+            context += ", " + elementIDContextParameter + "=" + elementID;
+        }
+    }
+    var primaryForm = getPrimaryForm();
+    primaryForm.uiEventType.value = type;
+    primaryForm.context.value = context;
+
+    if(submitForm) {
+        var saveContextParameter = "$Save";
+        var redirectContextParameter = "$Redirect";
+        if(context.indexOf(saveContextParameter) >= 0) {
+            //Events that use the $Save context parameter are only run if the user confirms saving is ok
+            if(confirm("All changes will be saved.  Is this OK?")) {
+                primaryForm.quickSave.value = true;
+                submitForm("Save");
+            }
+        } else if(context.indexOf(redirectContextParameter) >= 0) {
+            //Events that use the $Redirect context parameter will always redirect, but only save when confirmed
+            if(hasPageChanged()) {
+                $("#dialog-jump").data("isRedirectEvent",true).dialog("open");
+            } else {
+                submitForm("TriggerEvent");
+            }
+        } else {
+            //Do not save by default
+            submitForm("TriggerEvent");
+        }
+    }
+}
+
+function exitFromSurvey(){
+    if(hasPageChanged()){
+        if(confirm("Page has been modified. Would you like to save your changes?")) {
+            getPrimaryForm().exit.value='true';
+            saveForm();
+            return;
+        }
+    }
+    cancelAction();
+}
+
+var sortIDPrefix = 'QPKG_SORT_';
+function dynamicUserSortBlock(qID, sortField, sortOrderField) {
+    if(!sortOrderField) {
+        //Default to ascending order
+        sortOrderField = 'Ascending';
+    }
+    var combinedSortField = sortField+'___XX___'+sortOrderField;
+    createCookie(sortIDPrefix+qID, combinedSortField);
+    return submitForm('Refresh');
+}
+
+function getUserSortCookies() {
+    var cookies = document.cookie.split(';');
+    var sortCookies = new Array();
+    for(var i = 0; i < cookies.length; i++) {
+        var cookie = cookies[i];
+        while (cookie.charAt(0)==' ') cookie = cookie.substring(1); // trim leading whitespace
+        if (cookie.startsWith('QPKG_SORT_')) {
+            sortCookies.push(cookie);
+        }
+    }
+    return sortCookies;
+}
+
+function customInit(ajaxCall) {
+    initTextAreaFields();
+    skipDefaultFocus=false;
+    recordPageState();
+    stretchRepetitionDividers();
+
+    var qpStatusHeaderToggle = readCookie("questionPackageStatusHeader");
+    if(qpStatusHeaderToggle == "open") {
+        $("div#headerDetailsContent").show();
+        
+        
+        if($("#toggle a#close").is(":hidden")) {
+            $("#toggle a").toggle();
+        }
+        createCookie("questionPackageStatusHeader", "open");  
+    }
+    // Timeout to hide quick save confirmation
+    var quickSaveBar=document.getElementById('quickSaveConfirmation');
+    if(quickSaveBar) {
+        setTimeout("$('#quickSaveConfirmation').addClass('hidden');", 5000);
+    }
+    
+    $("input,select,textarea,canvas","#qsetForm").each(function() {
+        if(this.id && !this.disabled && !this.readOnly && this.type!='hidden') {
+            var hasTrigger = $(this).hasClass("trigger");
+            var onclickElement = this;
+            if(this.type=='radio' || this.type=='checkbox') {
+                
+                $("#qsetForm").on('click', '#'+onclickElement.id, function(event) {
+                    if(hasTrigger) {
+                        
+                        event.preventDefault();
+                    }
+                    handleFocus(onclickElement, !hasTrigger, onclickElement.id);
+                });
+            }
+            else {
+                $("#qsetForm").on("change","#"+onclickElement.id, function() {
+                    handleFocusAfterReload(onclickElement.id, !hasTrigger);
+                });
+            }
+        }
+    });
+    // Back from AJAX call
+    requestInProgress=false;
+    // MVN-8999: Third-party library bug sometimes leaves a datepicker open
+    $("div#ui-datepicker-div").hide();
+
+    // handle restoring user sort settings on page load
+    var sortCookies = getUserSortCookies();
+    for(var i = 0; i < sortCookies.length; i++) {
+        var sortCookie = sortCookies[i];
+//        console.log(sortCookie);
+        var name = sortCookie.substring(0, sortCookie.indexOf('='));
+        var content = sortCookie.substring(sortCookie.indexOf('=')+1);
+//        console.log('name: '+name);
+//        console.log('content: '+content);
+        var qid = name.substring(sortIDPrefix.length, name.length);
+        var sortField = content.substring(0, content.indexOf('___XX___'));
+        var sortOrder = content.substring(content.indexOf('___XX___')+'___XX___'.length);
+//        console.log('qid: '+qid);
+//        console.log('sort value: '+sortField);
+//        console.log('sort order: '+sortOrder);
+        $('#SORT\\.REPEATABLE\\.'+qid+'\\.FIELD').val(sortField);
+        $('#SORT\\.REPEATABLE\\.'+qid+'\\.ORDER').val(sortOrder);
+    }
+    //remove tooltips as the ajax call only replaces questionset div and tooltips are outside of it.
+    $(".tooltip").remove();
+    var touchEnabled = ('ontouchstart' in window) || window.DocumentTouch && document instanceof DocumentTouch;
+    $("body").on("globalInit-complete",function(){
+        $("input.form-control, select.form-control").each(function(){
+            var formElement = $(this);
+            formElement.tooltip({
+                container: "body",
+                trigger: "manual",
+                title: function(){
+                    var element = $(this);
+                    if(element.is("select")){
+                        return element.find("option:selected").text();
+                    }
+                    return element.val();
+                },
+            });
+            if(touchEnabled) {
+                formElement.on("touchstart", function () {
+                    formElement.tooltip('show');
+                });
+                formElement.on("touchend", function () {
+                    formElement.tooltip('hide');
+                });
+            }else {
+                formElement.hover(function () {
+                    if(inputOverflows(formElement)) {
+                        setTimeout(function () {
+                            if (formElement.is(":hover")) {
+                                formElement.tooltip('show');
+                            }
+                        }, 1000);
+                    }
+                }, function () {
+                    formElement.tooltip('hide');
+                });
+            }
+        });
+    });
+    
+
+}
+
+function inputOverflows($element){
+    if($element.is("input")){
+        return $element.get(0).scrollWidth > $element.outerWidth();
+    }
+    return true;
+}
+function confirmCancel() {
+	if(true &&
+       hasPageChanged() &&
+       confirm('Warning: There have been changes made to this page. If you click OK, any changes will not be saved and you will exit the page. If you wish to save the information on this page, click Cancel and then press the Save button.')==false)
+    {
+		return;
+	}
+	cancelAction();
+}
+
+var prevVal='';
+
+
+
+var indSC = new Object();
+
+</SCRIPT>
+<link rel="stylesheet" href="css/maven.min.css?v=6.8.202307111805" type="text/css">
+<link rel="stylesheet" href="css/maven-custom.css?v=6.8.202307111805" type="text/css">
+<script type="text/javascript">var _isPopupWindow=false;</script>
+<script type="text/javascript">
+    $(document).ready(function() {
+        $('#SearchTerm').fullTextSearchAutosuggest({
+            availableTags : [{ label: "Alias", value: "participants.party.alias" },{ label: "BirthDate", value: "participants.party.birthDate" },{ label: "CaseID", value: "caseID" },{ label: "City", value: "participants.party.contactPoints.city" },{ label: "Country", value: "participants.party.contactPoints.country" },{ label: "County", value: "participants.party.contactPoints.county" },{ label: "CreateDate", value: "createDate" },{ label: "EffectiveDate", value: "effectiveDate" },{ label: "EffectiveFromDate", value: "effectiveFromDate" },{ label: "EffectiveToDate", value: "effectiveToDate" },{ label: "Email", value: "participants.party.contactPoints.email" },{ label: "ExternalID", value: "externalID" },{ label: "Fax", value: "participants.party.contactPoints.fax" },{ label: "FirstName", value: "participants.party.firstName" },{ label: "FullName", value: "participants.party.fullName" },{ label: "Gender", value: "participants.party.gender" },{ label: "HomePhone", value: "participants.party.contactPoints.homePhone" },{ label: "LastName", value: "participants.party.lastName" },{ label: "MaidenName", value: "participants.party.maidenName" },{ label: "MiddleName", value: "participants.party.middleName" },{ label: "MobilePhone", value: "participants.party.contactPoints.mobilePhone" },{ label: "NormalizedNameFemale", value: "participants.party.firstName_normalized_female" },{ label: "NormalizedNameMale", value: "participants.party.firstName_normalized_male" },{ label: "Note", value: "notes.text" },{ label: "OfficialPlace", value: "participants.party.contactPoints.officialPlace" },{ label: "Pager", value: "participants.party.contactPoints.pager" },{ label: "PostalCode", value: "participants.party.contactPoints.postalCode" },{ label: "ProductCode", value: "product.code" },{ label: "ProductDescription", value: "product.description" },{ label: "ProductName", value: "product.name" },{ label: "SoundexFirstNameFemale", value: "participants.party.firstName_soundex_female" },{ label: "SoundexFirstNameMale", value: "participants.party.firstName_soundex_male" },{ label: "SoundexLastName", value: "participants.party.lastName_soundex" },{ label: "State", value: "participants.party.contactPoints.state" },{ label: "Status", value: "status" },{ label: "Street1", value: "participants.party.contactPoints.street1" },{ label: "Street2", value: "participants.party.contactPoints.street2" },{ label: "Suffix", value: "participants.party.suffix" },{ label: "TaxID", value: "participants.party.taxID" },{ label: "WorkPhone", value: "participants.party.contactPoints.workPhone" },{ label: "Zip", value: "participants.party.contactPoints.postalCode" },{ label: "ZipCode", value: "participants.party.contactPoints.postalCode" }],
+            defaultSearchText : ''
+        });
+        $('#SearchTerm')
+            .bind('focus', function() {
+                var top = $(this).position().top;
+                var left = $(this).position().left - $('#searchOnlineHelp').width() - 5; // the last bit is for a little padding
+                var height = $(this).height;
+                $('#searchOnlineHelp')
+                        .css('position', 'absolute')
+                        .css('z-index','1')
+                        .css('top', top)
+                        .css('left', left)
+                        .css('height', height)
+                        .fadeIn();
+            })
+            .bind('blur', function() {
+                $('#searchOnlineHelp').fadeOut();
+            });
+    });
+    function submitSearch() {
+        // only submit the search when enter is hit
+        var searchTerm = $.trim(document.getElementById('SearchTerm').value);
+        warnAndJump('search.do?SearchTerm='+encodeURIComponent(searchTerm), !isEditPage());
+        wasSubmitted = true;
+    }
+</script>
+</head>
+
+<body  onload="globalInit();" onunload="globalUninit();">
+
+<div id="dialog-jump" title="Confirm Navigation">Page has been modified. Would you like to save your changes?</div>
+    <div id="navbar-container" class="navbar-fixed-top">
+        <nav id="main-navbar" class="navbar navbar-inverse" role="navigation">
+            <div class="container-fluid">
+                <div class="navbar-header">
+                    <button id="sidebarMenuButton" type="button" class="navbar-toggle  pull-left hidden-lg hidden-md" aria-label="Sidebar menu button">
+                        <span class="icon-bar"></span>
+                        <span class="icon-bar"></span>
+                        <span class="icon-bar"></span>
+                    </button>
+                    <a class="navbar-brand" href="#">Conduent Electronic Disease Surveillance System</a>
+                </div>
+                <div class="navbar-right hidden-xs hidden-sm">
+                        <ul class="nav navbar-nav navbar-left">
+                                <li>
+                                    <a id="skipNavigation" href="javascript:void(0);" aria-label="Skip navigation" onClick="return true;" title="Skip navigation" id="skipNavigation" class="navbar-icon sr-only sr-only-focusable ">
+                                            <span class="fa fa-angle-double-right fa-2x"></span>
+                                    </a>
+                                </li>
+                                <li>
+                                    <a id="Nav_Home" href="../delaware/main.do?home=true" aria-label="Home" onClick="return true;" title="Home" id="Nav_Home" class="navbar-icon ">
+                                            <span class="fa fa-home fa-2x"></span>
+                                    </a>
+                                </li>
+                                <li>
+                                    <a id="Nav_Help" href="javascript:void(0);" aria-label="Open Help" onClick="return openOnlineHelp('toc');" title="Open Help" id="Nav_Help" class="navbar-icon ">
+                                            <span class="fa fa-question-circle fa-2x"></span>
+                                    </a>
+                                </li>
+                                <li>
+                                    <a id="Nav_breadCrumHistory" href="javascript:void(0);" aria-label="History" onClick="return true;" title="History" id="Nav_breadCrumHistory" class="navbar-icon dropdown-toggle" data-toggle="dropdown">
+                                            <span class="fa fa-history fa-2x"></span>
+                                    </a>
+                                        <ul class="dropdown-menu dropdown-menu-right">
+                                            <li class="dropdown-header">History</li>
+                                                <li><a id="Nav_History_0" href="../delaware/processBreadcrumbsAction.do?index=7">Edit Question Package [100004260] - Treatment</a></li>
+                                                <li><a id="Nav_History_1" href="../delaware/processBreadcrumbsAction.do?index=6">Edit Question Package [100004260] - Treatment</a></li>
+                                                <li><a id="Nav_History_2" href="../delaware/processBreadcrumbsAction.do?index=5">Main [100004260]</a></li>
+                                                <li><a id="Nav_History_3" href="../delaware/processBreadcrumbsAction.do?index=4">Edit Question Package [100004260] - Treatment</a></li>
+                                                <li><a id="Nav_History_4" href="../delaware/processBreadcrumbsAction.do?index=3">Splash</a></li>
+                                                <li><a id="Nav_History_5" href="../delaware/processBreadcrumbsAction.do?index=2">Edit Question Package [100004260] - COVID19 Self Monitoring Survey</a></li>
+                                                <li><a id="Nav_History_6" href="../delaware/processBreadcrumbsAction.do?index=1">Choose Associated Contact Point [100004260]</a></li>
+                                                <li><a id="Nav_History_7" href="../delaware/processBreadcrumbsAction.do?index=0">Edit Question Package [100004260] - Demographic</a></li>
+                                        </ul>
+                                </li>
+                        </ul>
+                                <form class="navbar-form navbar-left" name="quickSearch" action="search.do" onsubmit="return false;" role="search">
+                                    <div class="form-group">
+                                        <span class="sr-only"><label for="SearchTerm">Search:</label></span>
+                                        <input type="text" id="SearchTerm" class="form-control input-sm" name="SearchTerm" title="Type in your search term and hit &#39;Enter&#39; or click &#39;Search&#39;" placeholder="Search Case ID or Criteria">
+                                        <button id="toolbarSearchButton" class="btn btn-primary btn-sm navbar-btn" onclick="submitSearch();">Search</button>
+                                    </div>
+                                </form>
+                    <button id="toolbarUserNameButton" class="btn btn-primary btn-sm navbar-btn dropdown-toggle " data-toggle="dropdown">System Administrator <span class="caret"></span></button>
+                        <ul class="dropdown-menu dropdown-menu-right">
+                                    <li><a href="#!" onClick="switchPage('../delaware/main.do?unloadCase=true')">Close Record</a></li>
+                                    <li><a href="#!" onClick="switchPage('../delaware/editUserProfile.do')">Edit Profile</a></li>
+                                    <li class="divider"></li>
+                                    <li><a href="#!" onClick="switchPage('../delaware/main.do?switchApplication=True')">Administration</a></li>
+                                    <li class="divider"></li>
+                                    <li><a href="#!" onClick="switchPage('../delaware/logout.do')">Logout</a></li>
+                        </ul>
+                </div>
+            </div>
+        </nav>
+<nav id="sub-navbar" class="navbar navbar-default" role="navigation">
+    <div class="container-fluid">
+            <div class="navbar-header">
+                <h1 id="page-title" class="clip-ellipsis"><span title="Treatment - Jems Anderson - COVID-19">Treatment - Jems Anderson - COVID-19</span></h1>
+            </div>
+            <div class="pull-right" id="sub-navbar-button-groups">
+                <div class="hidden-xs hidden-sm">
+<form class="navbar-form navbar-left" name="quickNavBarForm" method="post" action="">
+    <div id="quickNavBar" class="quickNavBar form-group">
+        <div class="dropdown">
+            <button class="btn btn-default btn-sm navbar-btn dropdown-toggle" type="button" id="quickLinks" data-toggle="dropdown" aria-expanded="false">
+                Jump To
+                <span class="caret"></span>
+            </button>
+            <ul class="dropdown-menu scrollable-menu dropdown-menu-right" role="menu" aria-labelledby="quickLinks">
+                <li role="presentation" class="dropdown-header">Question Packages</li>
+                <li role="presentation"><a id="QuestionPackages_0" role="menuitem" tabindex="-1" href="editQuestionPackage.do?qpkgID=1796307">Administrative</a></li>
+                <li role="presentation"><a id="QuestionPackages_1" role="menuitem" tabindex="-1" href="editQuestionPackage.do?qpkgID=1796303">Demographic</a></li>
+                <li role="presentation"><a id="QuestionPackages_2" role="menuitem" tabindex="-1" href="editQuestionPackage.do?qpkgID=1796305">Clinical</a></li>
+                <li role="presentation"><a id="QuestionPackages_3" role="menuitem" tabindex="-1" href="editQuestionPackage.do?qpkgID=1796332">Treatment</a></li>
+                <li role="presentation"><a id="QuestionPackages_4" role="menuitem" tabindex="-1" href="editQuestionPackage.do?qpkgID=1796335">Epidemiology</a></li>
+                <li role="presentation"><a id="QuestionPackages_5" role="menuitem" tabindex="-1" href="editQuestionPackage.do?qpkgID=1796331">Lab Interpretation</a></li>
+                <li role="presentation"><a id="QuestionPackages_6" role="menuitem" tabindex="-1" href="editQuestionPackage.do?qpkgID=1796339">Contacts</a></li>
+                <li role="presentation"><a id="QuestionPackages_7" role="menuitem" tabindex="-1" href="editQuestionPackage.do?qpkgID=1796337">Contact Tracing</a></li>
+                <li role="presentation"><a id="QuestionPackages_8" role="menuitem" tabindex="-1" href="editQuestionPackage.do?qpkgID=1846846">Contact Elicitation</a></li>
+                <li role="presentation"><a id="QuestionPackages_9" role="menuitem" tabindex="-1" href="editQuestionPackage.do?qpkgID=1796338">COVID19 Self Monitoring Survey</a></li>
+                <li role="presentation"><a id="QuestionPackages_10" role="menuitem" tabindex="-1" href="editQuestionPackage.do?qpkgID=1796333">Vaccination</a></li>
+                <li role="presentation"><a id="QuestionPackages_11" role="menuitem" tabindex="-1" href="editQuestionPackage.do?qpkgID=1796340">Survey metrics</a></li>
+                <li role="presentation" class="divider"></li>
+                <li role="presentation" class="dropdown-header">Wizards</li>
+                <li role="presentation"><a id="Wizards_0" role="menuitem" tabindex="-1" href="main.do?ViewWizard=true&amp;selectedVirtualPackage=1796293_GENERIC_MMG_VQP">CDC Generic MMG</a></li>
+                <li role="presentation"><a id="Wizards_1" role="menuitem" tabindex="-1" href="main.do?ViewWizard=true&amp;selectedVirtualPackage=1796293_COVID19_VQP">COVID-19 Surveillance Worksheet</a></li>
+                <li role="presentation" class="divider"></li>
+                <li role="presentation" class="dropdown-header">Concerns</li>
+                <li role="presentation"><a id="Concerns_0" role="menuitem" tabindex="-1" href="editConcern.do?AddConcern=true">Add Concern...</a></li>
+                <li role="presentation" class="divider"></li>
+                <li role="presentation" class="dropdown-header">Tasks</li>
+                <li role="presentation"><a id="Tasks_0" role="menuitem" tabindex="-1" href="editTask.do?AddTask=true&amp;caseSpecific=true">Add Task...</a></li>
+                <li role="presentation" class="divider"></li>
+                <li role="presentation" class="dropdown-header">Lab Results</li>
+                <li role="presentation"><a id="Investigations_0" role="menuitem" tabindex="-1" href="editInvestigation.do?AddInvestigation=true">Add Lab Result...</a></li>
+                <li role="presentation" class="divider"></li>
+                <li role="presentation" class="dropdown-header">Addresses</li>
+                <li role="presentation"><a id="ContactPoints_0" role="menuitem" tabindex="-1" href="editContactPoint.do?PartyKey=1796292&amp;ContactPointKey=1796253">Home</a></li>
+                <li role="presentation"><a id="ContactPoints_1" role="menuitem" tabindex="-1" href="editContactPoint.do?PartyKey=1796292&amp;submitType=addContactPoint">Add Contact Point...</a></li>
+                <li role="presentation" class="divider"></li>
+                <li role="presentation" class="dropdown-header">Other</li>
+                <li role="presentation"><a id="Other_0" role="menuitem" tabindex="-1" href="editParticipant.do?participantID=1796293&amp;EditParticipant=true">Edit Person...</a></li>
+                
+            </ul>
+        </div>
+    </div>
+</form>
+                    <div class="btn-group" id="sub-navbar-buttons">
+                            <button id="topSaveButton" class="btn btn-default btn-sm navbar-btn" type="button">Save</button>
+                            <button id="topQuickSaveButton" class="btn btn-default btn-sm navbar-btn" type="button">Save &amp; Stay</button>
+                            <button id="topCancelButton" class="btn btn-default btn-sm navbar-btn" type="button">Cancel</button>
+                    </div>
+                </div>
+                <div class="dropdown">
+                    <button id="subnav-actions" class="btn btn-default btn-sm navbar-btn dropdown-toggle visible-xs-inline-block visible-sm-inline-block" type="button" data-toggle="dropdown">Actions <span class="fa fa-caret-down"></span></button>
+                    <ul id="mobile-actions-list" class="dropdown-menu dropdown-menu-right"></ul>
+                </div>
+            </div>
+            
+    
+    <div id="headerDetailsPanel" onresize="padContent('#page-content>div.formDiv', this, 1);" class="header-details resizable-header alt-hidden" data-expand-message="Expand Details" data-close-message="Close Details">
+        <div id="headerDetailsContent" class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+            <div id="headerDetailsWrapper" class="row">
+                <div id="qpStatusDiv" class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+                    
+                    
+                        <span class="boldText">Status:</span>
+                        Completed (MainPage.NoQuestions: 35, MainPage.IncompleteQuestions: 0)
+                    
+                </div>
+                
+                <div id="headerInclude" class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+                    
+
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    
+    </div>
+</nav>
+    </div>
+        <a href="#" id="skipTarget" class="skip-navigation sr-only sr-only-focusable" tabindex="-1">Start of main content</a>
+
+
+    <div id="sidebar">
+    <div id="side-menu">
+        <div class="list-group">
+            <a href="#" class="list-group-item list-group-parent list-group-title"><span class="glyphicon glyphicon-user sidebar-item-icon"></span>Jems Anderson</a>
+        <a id="SideBarNav_Home" href="../delaware/main.do?home=true" onClick="return true;" class="list-group-item navbar-icon"><span class="fa fa-home sidebar-item-icon"></span>Home</a>
+        <a id="SideBarNav_Help" href="#" onClick="return openOnlineHelp('toc');" class="list-group-item navbar-icon"><span class="fa fa-question-circle sidebar-item-icon"></span>Open Help</a>
+    <a id="SideBarNav_breadCrumHistory" href="#" class="list-group-item list-group-parent navbar-icon" data-toggle="collapse" data-target="#SideBarNav_breadCrumHistory_group" data-parent="#side-menu"><span class="fa fa-history sidebar-item-icon"></span>History</a>
+    <div id="SideBarNav_breadCrumHistory_group" class="sublinks collapse">
+        <a id="SideBarNav_History_0" href="../delaware/processBreadcrumbsAction.do?index=7" onClick="return true;" class="list-group-item">Edit Question Package [100004260] - Treatment</a>
+        <a id="SideBarNav_History_1" href="../delaware/processBreadcrumbsAction.do?index=6" onClick="return true;" class="list-group-item">Edit Question Package [100004260] - Treatment</a>
+        <a id="SideBarNav_History_2" href="../delaware/processBreadcrumbsAction.do?index=5" onClick="return true;" class="list-group-item">Main [100004260]</a>
+        <a id="SideBarNav_History_3" href="../delaware/processBreadcrumbsAction.do?index=4" onClick="return true;" class="list-group-item">Edit Question Package [100004260] - Treatment</a>
+        <a id="SideBarNav_History_4" href="../delaware/processBreadcrumbsAction.do?index=3" onClick="return true;" class="list-group-item">Splash</a>
+        <a id="SideBarNav_History_5" href="../delaware/processBreadcrumbsAction.do?index=2" onClick="return true;" class="list-group-item">Edit Question Package [100004260] - COVID19 Self Monitoring Survey</a>
+        <a id="SideBarNav_History_6" href="../delaware/processBreadcrumbsAction.do?index=1" onClick="return true;" class="list-group-item">Choose Associated Contact Point [100004260]</a>
+        <a id="SideBarNav_History_7" href="../delaware/processBreadcrumbsAction.do?index=0" onClick="return true;" class="list-group-item">Edit Question Package [100004260] - Demographic</a>
+    </div>
+    <a id="Nav_QuestionPackages" href="#" class="list-group-item list-group-parent" data-toggle="collapse" data-target="#Nav_QuestionPackages_group" data-parent="#side-menu"><span class="glyphicon glyphicon-triangle-bottom sidebar-item-icon"></span>Question Packages</a>
+    <div id="Nav_QuestionPackages_group" class="sublinks collapse">
+        <a id="Nav_QuestionPackages_0" href="editQuestionPackage.do?qpkgID=1796307" onClick="return true;" class="list-group-item small">Administrative</a>
+        <a id="Nav_QuestionPackages_1" href="editQuestionPackage.do?qpkgID=1796303" onClick="return true;" class="list-group-item small">Demographic</a>
+        <a id="Nav_QuestionPackages_2" href="editQuestionPackage.do?qpkgID=1796305" onClick="return true;" class="list-group-item small">Clinical</a>
+        <a id="Nav_QuestionPackages_3" href="editQuestionPackage.do?qpkgID=1796332" onClick="return true;" class="list-group-item small">Treatment</a>
+        <a id="Nav_QuestionPackages_4" href="editQuestionPackage.do?qpkgID=1796335" onClick="return true;" class="list-group-item small">Epidemiology</a>
+        <a id="Nav_QuestionPackages_5" href="editQuestionPackage.do?qpkgID=1796331" onClick="return true;" class="list-group-item small">Lab Interpretation</a>
+        <a id="Nav_QuestionPackages_6" href="editQuestionPackage.do?qpkgID=1796339" onClick="return true;" class="list-group-item small">Contacts</a>
+        <a id="Nav_QuestionPackages_7" href="editQuestionPackage.do?qpkgID=1796337" onClick="return true;" class="list-group-item small">Contact Tracing</a>
+        <a id="Nav_QuestionPackages_8" href="editQuestionPackage.do?qpkgID=1846846" onClick="return true;" class="list-group-item small">Contact Elicitation</a>
+        <a id="Nav_QuestionPackages_9" href="editQuestionPackage.do?qpkgID=1796338" onClick="return true;" class="list-group-item small">COVID19 Self Monitoring Survey</a>
+        <a id="Nav_QuestionPackages_10" href="editQuestionPackage.do?qpkgID=1796333" onClick="return true;" class="list-group-item small">Vaccination</a>
+        <a id="Nav_QuestionPackages_11" href="editQuestionPackage.do?qpkgID=1796340" onClick="return true;" class="list-group-item small">Survey metrics</a>
+    </div>
+    <a id="Nav_Wizards" href="#" class="list-group-item list-group-parent" data-toggle="collapse" data-target="#Nav_Wizards_group" data-parent="#side-menu"><span class="glyphicon glyphicon-triangle-bottom sidebar-item-icon"></span>Wizards</a>
+    <div id="Nav_Wizards_group" class="sublinks collapse">
+        <a id="Nav_Wizards_0" href="main.do?ViewWizard=true&amp;selectedVirtualPackage=1796293_GENERIC_MMG_VQP" onClick="return true;" class="list-group-item small">CDC Generic MMG</a>
+        <a id="Nav_Wizards_1" href="main.do?ViewWizard=true&amp;selectedVirtualPackage=1796293_COVID19_VQP" onClick="return true;" class="list-group-item small">COVID-19 Surveillance Worksheet</a>
+    </div>
+    <a id="Nav_Concerns" href="#" class="list-group-item list-group-parent" data-toggle="collapse" data-target="#Nav_Concerns_group" data-parent="#side-menu"><span class="glyphicon glyphicon-triangle-bottom sidebar-item-icon"></span>Concerns</a>
+    <div id="Nav_Concerns_group" class="sublinks collapse">
+        <a id="Nav_Concerns_0" href="editConcern.do?AddConcern=true" onClick="return true;" class="list-group-item small">Add Concern...</a>
+    </div>
+    <a id="Nav_Tasks" href="#" class="list-group-item list-group-parent" data-toggle="collapse" data-target="#Nav_Tasks_group" data-parent="#side-menu"><span class="glyphicon glyphicon-triangle-bottom sidebar-item-icon"></span>Tasks</a>
+    <div id="Nav_Tasks_group" class="sublinks collapse">
+        <a id="Nav_Tasks_0" href="editTask.do?AddTask=true&amp;caseSpecific=true" onClick="return true;" class="list-group-item small">Add Task...</a>
+    </div>
+    <a id="Nav_Investigations" href="#" class="list-group-item list-group-parent" data-toggle="collapse" data-target="#Nav_Investigations_group" data-parent="#side-menu"><span class="glyphicon glyphicon-triangle-bottom sidebar-item-icon"></span>Lab Results</a>
+    <div id="Nav_Investigations_group" class="sublinks collapse">
+        <a id="Nav_Investigations_0" href="editInvestigation.do?AddInvestigation=true" onClick="return true;" class="list-group-item small">Add Lab Result...</a>
+    </div>
+    <a id="Nav_ContactPoints" href="#" class="list-group-item list-group-parent" data-toggle="collapse" data-target="#Nav_ContactPoints_group" data-parent="#side-menu"><span class="glyphicon glyphicon-triangle-bottom sidebar-item-icon"></span>Addresses</a>
+    <div id="Nav_ContactPoints_group" class="sublinks collapse">
+        <a id="Nav_ContactPoints_0" href="editContactPoint.do?PartyKey=1796292&amp;ContactPointKey=1796253" onClick="return true;" class="list-group-item small">Home</a>
+        <a id="Nav_ContactPoints_1" href="editContactPoint.do?PartyKey=1796292&amp;submitType=addContactPoint" onClick="return true;" class="list-group-item small">Add Contact Point...</a>
+    </div>
+    <a id="Nav_Other" href="#" class="list-group-item list-group-parent" data-toggle="collapse" data-target="#Nav_Other_group" data-parent="#side-menu"><span class="glyphicon glyphicon-triangle-bottom sidebar-item-icon"></span>Other</a>
+    <div id="Nav_Other_group" class="sublinks collapse">
+        <a id="Nav_Other_0" href="editParticipant.do?participantID=1796293&amp;EditParticipant=true" onClick="return true;" class="list-group-item small">Edit Person...</a>
+    </div>
+    <a id="Nav_CaseManagement" href="#" class="list-group-item list-group-parent" data-toggle="collapse" data-target="#Nav_CaseManagement_group" data-parent="#side-menu"><span class="glyphicon glyphicon-triangle-bottom sidebar-item-icon"></span>Case Management</a>
+    <div id="Nav_CaseManagement_group" class="sublinks collapse in">
+        <a id="Nav_DropDownCloseCase" href="#" onClick="switchPage('../delaware/main.do?unloadCase=true')" class="list-group-item toolbar-icon">Close Record</a>
+    </div>
+    <a id="Nav_UserManagement" href="#" class="list-group-item list-group-parent" data-toggle="collapse" data-target="#Nav_UserManagement_group" data-parent="#side-menu"><span class="glyphicon glyphicon-triangle-bottom sidebar-item-icon"></span>Profile Management</a>
+    <div id="Nav_UserManagement_group" class="sublinks collapse in">
+        <a id="Nav_DropDownEditUser" href="#" onClick="switchPage('../delaware/editUserProfile.do')" class="list-group-item toolbar-icon">Edit Profile</a>
+        <a id="Nav_DropDownGotoAdmin" href="#" onClick="switchPage('../delaware/main.do?switchApplication=True')" class="list-group-item toolbar-icon">Administration</a>
+        <a id="Nav_DropDownLogout" href="#" onClick="switchPage('../delaware/logout.do')" class="list-group-item toolbar-icon">Logout</a>
+    </div>
+        </div>
+    </div>
+</div>
+
+<div id="page-content" class="container-fluid">
+    <div class="formDiv"><form name="qsetForm" id="qsetForm" onsubmit="return false;" action="/delaware/editQuestionPackage.do" method="post">
+    <input type="hidden" name="pageModified" value="false">
+    <INPUT type="hidden" name="exit" VALUE="">
+    <INPUT type="hidden" name="previous" VALUE="">
+    <input type="hidden" name="next" value="">
+    <INPUT type="hidden" name="urlToOpen" value="">
+    <INPUT type="hidden" name="qpkgToOpen" value="">
+    <INPUT type="hidden" name="quickSave" VALUE="">
+    <INPUT type="hidden" name="returnSave" VALUE="">
+    <INPUT type="hidden" name="submitType" VALUE="Auto">
+    <INPUT type="hidden" name="contactPointID" VALUE="">
+    <INPUT type="hidden" name="contactPointQuestionBlock" VALUE="">
+    <INPUT type="hidden" name="contactPointIteration" VALUE="">
+    <INPUT type="hidden" name="uiEventType" VALUE="">
+    <INPUT type="hidden" name="context" VALUE="">
+    <INPUT type="hidden" name="mobileOverride" VALUE="">
+    <INPUT type="hidden" name="gridID" VALUE="">
+    <INPUT type="hidden" name="fieldID" VALUE="">
+    <INPUT type="hidden" name="fieldValue" VALUE="">
+    <input type="hidden" name="focusElement" id="focusElement" value="DY_TXT_OTH_00_0">
+    <div id="entireDiv">
+
+  <div id="errorDivWrapper"></div>
+  <div id="qpkgLayoutDiv" class="container-fluid">
+          <div id="QuestionPackageGrid" class="fieldGridTable editQuestionPackage inline">
+    <div class="row" id="ROW.TREATMENT.0.Row" style="padding-left: 0em">
+    <div class="form-group col-xs-12 col-sm-12 col-md-12 col-lg-12 fullrow break" style="text-align: Center">
+        <div class="match-height">
+            <div id="TREATMENT" title="">
+                Treatment
+            </div>
+        </div>
+    </div>
+    </div>
+    <div class="row" id="ROW.TXT_ADMIN_00_0.1.Row" style="padding-left: 0em">
+    <div class="form-group col-xs-12 col-sm-12 col-md-12 col-lg-12"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="">
+<label
+for="TXT_ADMIN_00_0"
+>    <span class="" aria-label="label for Treatment administered">
+    Treatment administered
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-5 col-md-3 col-lg-2">
+<select id="TXT_ADMIN_00_0" name="TXT_ADMIN_00_0"
+class="form-control input-sm "
+onchange="" aria-label="Treatment administered">            <option value="" aria-label="Select One"></option>
+        <option selected value="Y">Yes</option>
+        <option  value="N">No</option>
+        <option  value="UNK">Unknown</option>
+</select>
+        </div>
+    </div></div></div>
+    </div>
+    <div class="row" id="ROW.LINE.2.Row" style="padding-left: 0em">
+    <div class="form-group col-xs-12 col-sm-12 col-md-12 col-lg-12 fullrow break line" style="height: 3px; padding: 0">
+        <div class="match-height">
+            <div id="LINE" title="">
+                
+            </div>
+        </div>
+    </div>
+    </div>
+    <div class="row" id="ROW.TXT_UNK_00_0.3.Row" style="padding-left: 0em">
+    <div class="form-group col-xs-12 col-sm-12 col-md-12 col-lg-12"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="">
+<span class=""
+aria-label="&amp;nbsp;"
+>    
+    &nbsp;
+
+</span>
+</div>
+        <div class="col-xs-12 col-sm-5 col-md-3 col-lg-2">
+    <fieldset class="fieldset_jaws">
+        <legend class="hidden_jaws">&amp;nbsp;</legend>
+        <div class="row container">
+                    <div class="col-lg-12 col-md-12 col-sm-12 col-xs-12 checkboxWrapper">
+                        <span>
+<input
+id="TXT_UNK_UNK_00_0"
+name="TXT_UNK_00_0"
+class="input-xs trigger"
+onchange=""
+style=""
+value="TXT_UNK_UNK_00_0"
+type="Checkbox"
+aria-label=""
+/>                        </span>
+                        <label for="TXT_UNK_UNK_00_0">Treatment type unknown</label>
+                    </div>
+        </div>
+    </fieldset>
+        </div>
+    </div></div></div>
+    </div>
+    <div class="row" id="QuestionPackageGrid.MECH.4.Row" style="padding-left: 0em">
+    <div class="form-group col-xs-12 col-sm-4 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="">
+<label
+for="RCVD_MECH_VENT_00_0"
+>    <span class="" aria-label="label for Mechanical ventilation or breathing tube">
+    Mechanical ventilation or breathing tube
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<select id="RCVD_MECH_VENT_00_0" name="RCVD_MECH_VENT_00_0"
+class="form-control input-sm trigger "
+onchange="" aria-label="Mechanical ventilation or breathing tube">            <option value="" aria-label="Select One"></option>
+        <option selected value="Y">Yes</option>
+        <option  value="N">No</option>
+        <option  value="UNK">Unknown</option>
+</select>
+        </div>
+    </div></div></div>
+    <div class="form-group col-xs-12 col-sm-5 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="If unknown populate with 999">
+<label
+for="DY_RCVD_MECH_VENT_00_0"
+>    <span class="" aria-label="label for Duration of mechanical ventilation (days)">
+    Duration of mechanical ventilation (days)
+        <span class="fa fa-info-circle icon-super"></span>
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<input
+id="DY_RCVD_MECH_VENT_00_0"
+name="DY_RCVD_MECH_VENT_00_0"
+class="form-control input-sm input_mask mask_integer"
+onchange=""
+style=""
+value="3"
+type="text"
+aria-label="Duration of mechanical ventilation (days)"
+size="18"
+/>        </div>
+    </div></div></div>
+    </div>
+    <div class="row" id="QuestionPackageGrid.ECMO.5.Row" style="padding-left: 0em">
+    <div class="form-group col-xs-12 col-sm-4 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="">
+<label
+for="RCVD_ECMO_00_0"
+>    <span class="" aria-label="label for Extracorporeal membrane oxygenation (ECMO)">
+    Extracorporeal membrane oxygenation (ECMO)
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<select id="RCVD_ECMO_00_0" name="RCVD_ECMO_00_0"
+class="form-control input-sm trigger "
+onchange="" aria-label="Extracorporeal membrane oxygenation (ECMO)">            <option value="" aria-label="Select One"></option>
+        <option selected value="Y">Yes</option>
+        <option  value="N">No</option>
+        <option  value="UNK">Unknown</option>
+</select>
+        </div>
+    </div></div></div>
+    <div class="form-group col-xs-12 col-sm-5 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="If unknown populate with 999">
+<label
+for="DY_RCVD_ECMO_00_0"
+>    <span class="" aria-label="label for Duration of ECMO (days)">
+    Duration of ECMO (days)
+        <span class="fa fa-info-circle icon-super"></span>
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<input
+id="DY_RCVD_ECMO_00_0"
+name="DY_RCVD_ECMO_00_0"
+class="form-control input-sm input_mask mask_integer"
+onchange=""
+style=""
+value="2"
+type="text"
+aria-label="Duration of ECMO (days)"
+size="18"
+/>        </div>
+    </div></div></div>
+    </div>
+    <div class="row" id="QuestionPackageGrid.BAR.6.Row" style="padding-left: 0em">
+    <div class="form-group col-xs-12 col-sm-4 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="">
+<label
+for="RCVD_BAR_00_0"
+>    <span class="" aria-label="label for Baricitinib">
+    Baricitinib
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<select id="RCVD_BAR_00_0" name="RCVD_BAR_00_0"
+class="form-control input-sm trigger "
+onchange="" aria-label="Baricitinib">            <option value="" aria-label="Select One"></option>
+        <option selected value="Y">Yes</option>
+        <option  value="N">No</option>
+        <option  value="UNK">Unknown</option>
+</select>
+        </div>
+    </div></div></div>
+    <div class="form-group col-xs-12 col-sm-5 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="If unknown populate with 999">
+<label
+for="DY_RCVD_BAR_00_0"
+>    <span class="" aria-label="label for Duration of Baricitinib (days)">
+    Duration of Baricitinib (days)
+        <span class="fa fa-info-circle icon-super"></span>
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<input
+id="DY_RCVD_BAR_00_0"
+name="DY_RCVD_BAR_00_0"
+class="form-control input-sm input_mask mask_integer"
+onchange=""
+style=""
+value="2"
+type="text"
+aria-label="Duration of Baricitinib (days)"
+size="18"
+/>        </div>
+    </div></div></div>
+    </div>
+    <div class="row" id="QuestionPackageGrid.BEB.7.Row" style="padding-left: 0em">
+    <div class="form-group col-xs-12 col-sm-4 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="">
+<label
+for="RCVD_BEB_00_0"
+>    <span class="" aria-label="label for Bebtelovimab">
+    Bebtelovimab
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<select id="RCVD_BEB_00_0" name="RCVD_BEB_00_0"
+class="form-control input-sm trigger "
+onchange="" aria-label="Bebtelovimab">            <option value="" aria-label="Select One"></option>
+        <option selected value="Y">Yes</option>
+        <option  value="N">No</option>
+        <option  value="UNK">Unknown</option>
+</select>
+        </div>
+    </div></div></div>
+    <div class="form-group col-xs-12 col-sm-5 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="If unknown populate with 999">
+<label
+for="DY_RCVD_BEB_00_0"
+>    <span class="" aria-label="label for Duration of Bebtelovimab (days)">
+    Duration of Bebtelovimab (days)
+        <span class="fa fa-info-circle icon-super"></span>
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<input
+id="DY_RCVD_BEB_00_0"
+name="DY_RCVD_BEB_00_0"
+class="form-control input-sm input_mask mask_integer"
+onchange=""
+style=""
+value="3"
+type="text"
+aria-label="Duration of Bebtelovimab (days)"
+size="18"
+/>        </div>
+    </div></div></div>
+    </div>
+    <div class="row" id="QuestionPackageGrid.DEX.8.Row" style="padding-left: 0em">
+    <div class="form-group col-xs-12 col-sm-4 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="">
+<label
+for="RCVD_DEX_00_0"
+>    <span class="" aria-label="label for Dexamethasone">
+    Dexamethasone
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<select id="RCVD_DEX_00_0" name="RCVD_DEX_00_0"
+class="form-control input-sm trigger "
+onchange="" aria-label="Dexamethasone">            <option value="" aria-label="Select One"></option>
+        <option selected value="Y">Yes</option>
+        <option  value="N">No</option>
+        <option  value="UNK">Unknown</option>
+</select>
+        </div>
+    </div></div></div>
+    <div class="form-group col-xs-12 col-sm-5 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="If unknown populate with 999">
+<label
+for="DY_RCVD_DEX_00_0"
+>    <span class="" aria-label="label for Duration of Dexamethasone (days)">
+    Duration of Dexamethasone (days)
+        <span class="fa fa-info-circle icon-super"></span>
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<input
+id="DY_RCVD_DEX_00_0"
+name="DY_RCVD_DEX_00_0"
+class="form-control input-sm input_mask mask_integer"
+onchange=""
+style=""
+value="2"
+type="text"
+aria-label="Duration of Dexamethasone (days)"
+size="18"
+/>        </div>
+    </div></div></div>
+    </div>
+    <div class="row" id="QuestionPackageGrid.EVU.9.Row" style="padding-left: 0em">
+    <div class="form-group col-xs-12 col-sm-4 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="">
+<label
+for="RCVD_EVU_00_0"
+>    <span class="" aria-label="label for Evusheld">
+    Evusheld
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<select id="RCVD_EVU_00_0" name="RCVD_EVU_00_0"
+class="form-control input-sm trigger "
+onchange="" aria-label="Evusheld">            <option value="" aria-label="Select One"></option>
+        <option selected value="Y">Yes</option>
+        <option  value="N">No</option>
+        <option  value="UNK">Unknown</option>
+</select>
+        </div>
+    </div></div></div>
+    <div class="form-group col-xs-12 col-sm-5 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="If unknown populate with 999">
+<label
+for="DY_RCVD_EVU_00_0"
+>    <span class="" aria-label="label for Duration of Evusheld (days)">
+    Duration of Evusheld (days)
+        <span class="fa fa-info-circle icon-super"></span>
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<input
+id="DY_RCVD_EVU_00_0"
+name="DY_RCVD_EVU_00_0"
+class="form-control input-sm input_mask mask_integer"
+onchange=""
+style=""
+value="3"
+type="text"
+aria-label="Duration of Evusheld (days)"
+size="18"
+/>        </div>
+    </div></div></div>
+    </div>
+    <div class="row" id="QuestionPackageGrid.ANT.10.Row" style="padding-left: 0em">
+    <div class="form-group col-xs-12 col-sm-4 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="">
+<label
+for="RCVD_ANTI_00_0"
+>    <span class="" aria-label="label for Anticoagulant agent">
+    Anticoagulant agent
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<select id="RCVD_ANTI_00_0" name="RCVD_ANTI_00_0"
+class="form-control input-sm trigger "
+onchange="" aria-label="Anticoagulant agent">            <option value="" aria-label="Select One"></option>
+        <option selected value="Y">Yes</option>
+        <option  value="N">No</option>
+        <option  value="UNK">Unknown</option>
+</select>
+        </div>
+    </div></div></div>
+    <div class="form-group col-xs-12 col-sm-5 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="If unknown populate with 999">
+<label
+for="DY_RCVD_ANTI_00_0"
+>    <span class="" aria-label="label for Duration of anticoagulation agent (days)">
+    Duration of anticoagulation agent (days)
+        <span class="fa fa-info-circle icon-super"></span>
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<input
+id="DY_RCVD_ANTI_00_0"
+name="DY_RCVD_ANTI_00_0"
+class="form-control input-sm input_mask mask_integer"
+onchange=""
+style=""
+value="2"
+type="text"
+aria-label="Duration of anticoagulation agent (days)"
+size="18"
+/>        </div>
+    </div></div></div>
+    </div>
+    <div class="row" id="QuestionPackageGrid.MOL.11.Row" style="padding-left: 0em">
+    <div class="form-group col-xs-12 col-sm-4 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="">
+<label
+for="RCVD_MOL_00_0"
+>    <span class="" aria-label="label for Molnupiravir">
+    Molnupiravir
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<select id="RCVD_MOL_00_0" name="RCVD_MOL_00_0"
+class="form-control input-sm trigger "
+onchange="" aria-label="Molnupiravir">            <option value="" aria-label="Select One"></option>
+        <option selected value="Y">Yes</option>
+        <option  value="N">No</option>
+        <option  value="UNK">Unknown</option>
+</select>
+        </div>
+    </div></div></div>
+    <div class="form-group col-xs-12 col-sm-5 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="If unknown populate with 999">
+<label
+for="DY_RCVD_MOL_00_0"
+>    <span class="" aria-label="label for Duration of Molnupiravir (days)">
+    Duration of Molnupiravir (days)
+        <span class="fa fa-info-circle icon-super"></span>
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<input
+id="DY_RCVD_MOL_00_0"
+name="DY_RCVD_MOL_00_0"
+class="form-control input-sm input_mask mask_integer"
+onchange=""
+style=""
+value="2"
+type="text"
+aria-label="Duration of Molnupiravir (days)"
+size="18"
+/>        </div>
+    </div></div></div>
+    </div>
+    <div class="row" id="QuestionPackageGrid.OXY.12.Row" style="padding-left: 0em">
+    <div class="form-group col-xs-12 col-sm-4 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="">
+<label
+for="RCVD_SUP_OXY_00_0"
+>    <span class="" aria-label="label for Supplemental oxygen">
+    Supplemental oxygen
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<select id="RCVD_SUP_OXY_00_0" name="RCVD_SUP_OXY_00_0"
+class="form-control input-sm trigger "
+onchange="" aria-label="Supplemental oxygen">            <option value="" aria-label="Select One"></option>
+        <option selected value="Y">Yes</option>
+        <option  value="N">No</option>
+        <option  value="UNK">Unknown</option>
+</select>
+        </div>
+    </div></div></div>
+    <div class="form-group col-xs-12 col-sm-5 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="If unknown populate with 999">
+<label
+for="DY_RCVD_SUP_OXY_00_0"
+>    <span class="" aria-label="label for Duration of supplemental oxygen (days)">
+    Duration of supplemental oxygen (days)
+        <span class="fa fa-info-circle icon-super"></span>
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<input
+id="DY_RCVD_SUP_OXY_00_0"
+name="DY_RCVD_SUP_OXY_00_0"
+class="form-control input-sm input_mask mask_integer"
+onchange=""
+style=""
+value="3"
+type="text"
+aria-label="Duration of supplemental oxygen (days)"
+size="18"
+/>        </div>
+    </div></div></div>
+    </div>
+    <div class="row" id="QuestionPackageGrid.PAX.13.Row" style="padding-left: 0em">
+    <div class="form-group col-xs-12 col-sm-4 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="">
+<label
+for="RCVD_PAX_00_0"
+>    <span class="" aria-label="label for Paxlovid">
+    Paxlovid
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<select id="RCVD_PAX_00_0" name="RCVD_PAX_00_0"
+class="form-control input-sm trigger "
+onchange="" aria-label="Paxlovid">            <option value="" aria-label="Select One"></option>
+        <option selected value="Y">Yes</option>
+        <option  value="N">No</option>
+        <option  value="UNK">Unknown</option>
+</select>
+        </div>
+    </div></div></div>
+    <div class="form-group col-xs-12 col-sm-5 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="If unknown populate with 999">
+<label
+for="DY_RCVD_PAX_00_0"
+>    <span class="" aria-label="label for Duration of Paxlovid (days)">
+    Duration of Paxlovid (days)
+        <span class="fa fa-info-circle icon-super"></span>
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<input
+id="DY_RCVD_PAX_00_0"
+name="DY_RCVD_PAX_00_0"
+class="form-control input-sm input_mask mask_integer"
+onchange=""
+style=""
+value="3"
+type="text"
+aria-label="Duration of Paxlovid (days)"
+size="18"
+/>        </div>
+    </div></div></div>
+    </div>
+    <div class="row" id="QuestionPackageGrid.MONO.14.Row" style="padding-left: 0em">
+    <div class="form-group col-xs-12 col-sm-4 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="">
+<label
+for="RCVD_MONO_00_0"
+>    <span class="" aria-label="label for Monoclonal antibodies">
+    Monoclonal antibodies
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<select id="RCVD_MONO_00_0" name="RCVD_MONO_00_0"
+class="form-control input-sm trigger "
+onchange="" aria-label="Monoclonal antibodies">            <option value="" aria-label="Select One"></option>
+        <option selected value="Y">Yes</option>
+        <option  value="N">No</option>
+        <option  value="UNK">Unknown</option>
+</select>
+        </div>
+    </div></div></div>
+    <div class="form-group col-xs-12 col-sm-5 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="If unknown populate with 999">
+<label
+for="DY_RCVD_MONO_00_0"
+>    <span class="" aria-label="label for Duration of monoclonal antibodies (days)">
+    Duration of monoclonal antibodies (days)
+        <span class="fa fa-info-circle icon-super"></span>
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<input
+id="DY_RCVD_MONO_00_0"
+name="DY_RCVD_MONO_00_0"
+class="form-control input-sm input_mask mask_integer"
+onchange=""
+style=""
+value="2"
+type="text"
+aria-label="Duration of monoclonal antibodies (days)"
+size="18"
+/>        </div>
+    </div></div></div>
+    </div>
+    <div class="row" id="QuestionPackageGrid.REM.15.Row" style="padding-left: 0em">
+    <div class="form-group col-xs-12 col-sm-4 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="">
+<label
+for="RCVD_REM_00_0"
+>    <span class="" aria-label="label for Remdesivir">
+    Remdesivir
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<select id="RCVD_REM_00_0" name="RCVD_REM_00_0"
+class="form-control input-sm trigger "
+onchange="" aria-label="Remdesivir">            <option value="" aria-label="Select One"></option>
+        <option selected value="Y">Yes</option>
+        <option  value="N">No</option>
+        <option  value="UNK">Unknown</option>
+</select>
+        </div>
+    </div></div></div>
+    <div class="form-group col-xs-12 col-sm-5 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="If unknown populate with 999">
+<label
+for="DY_RCVD_REM_00_0"
+>    <span class="" aria-label="label for Duration of Remdesivir (days)">
+    Duration of Remdesivir (days)
+        <span class="fa fa-info-circle icon-super"></span>
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<input
+id="DY_RCVD_REM_00_0"
+name="DY_RCVD_REM_00_0"
+class="form-control input-sm input_mask mask_integer"
+onchange=""
+style=""
+value="4"
+type="text"
+aria-label="Duration of Remdesivir (days)"
+size="18"
+/>        </div>
+    </div></div></div>
+    </div>
+    <div class="row" id="QuestionPackageGrid.SAR.16.Row" style="padding-left: 0em">
+    <div class="form-group col-xs-12 col-sm-4 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="">
+<label
+for="RCVD_SAR_00_0"
+>    <span class="" aria-label="label for Sarilumab">
+    Sarilumab
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<select id="RCVD_SAR_00_0" name="RCVD_SAR_00_0"
+class="form-control input-sm trigger "
+onchange="" aria-label="Sarilumab">            <option value="" aria-label="Select One"></option>
+        <option selected value="Y">Yes</option>
+        <option  value="N">No</option>
+        <option  value="UNK">Unknown</option>
+</select>
+        </div>
+    </div></div></div>
+    <div class="form-group col-xs-12 col-sm-5 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="If unknown populate with 999">
+<label
+for="DY_RCVD_SAR_00_0"
+>    <span class="" aria-label="label for Duration of Sarilumab (days)">
+    Duration of Sarilumab (days)
+        <span class="fa fa-info-circle icon-super"></span>
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<input
+id="DY_RCVD_SAR_00_0"
+name="DY_RCVD_SAR_00_0"
+class="form-control input-sm input_mask mask_integer"
+onchange=""
+style=""
+value="2"
+type="text"
+aria-label="Duration of Sarilumab (days)"
+size="18"
+/>        </div>
+    </div></div></div>
+    </div>
+    <div class="row" id="QuestionPackageGrid.TOC.17.Row" style="padding-left: 0em">
+    <div class="form-group col-xs-12 col-sm-4 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="">
+<label
+for="RCVD_TOC_00_0"
+>    <span class="" aria-label="label for Tocilizumab">
+    Tocilizumab
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<select id="RCVD_TOC_00_0" name="RCVD_TOC_00_0"
+class="form-control input-sm trigger "
+onchange="" aria-label="Tocilizumab">            <option value="" aria-label="Select One"></option>
+        <option selected value="Y">Yes</option>
+        <option  value="N">No</option>
+        <option  value="UNK">Unknown</option>
+</select>
+        </div>
+    </div></div></div>
+    <div class="form-group col-xs-12 col-sm-5 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="If unknown populate with 999">
+<label
+for="DY_RCVD_TOC_00_0"
+>    <span class="" aria-label="label for Duration of Tocilizumab (days)">
+    Duration of Tocilizumab (days)
+        <span class="fa fa-info-circle icon-super"></span>
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<input
+id="DY_RCVD_TOC_00_0"
+name="DY_RCVD_TOC_00_0"
+class="form-control input-sm input_mask mask_integer"
+onchange=""
+style=""
+value="3"
+type="text"
+aria-label="Duration of Tocilizumab (days)"
+size="18"
+/>        </div>
+    </div></div></div>
+    </div>
+    <div class="row" id="QuestionPackageGrid.TOF.18.Row" style="padding-left: 0em">
+    <div class="form-group col-xs-12 col-sm-4 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="">
+<label
+for="RCVD_TOF_00_0"
+>    <span class="" aria-label="label for Tofacitinib">
+    Tofacitinib
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<select id="RCVD_TOF_00_0" name="RCVD_TOF_00_0"
+class="form-control input-sm trigger "
+onchange="" aria-label="Tofacitinib">            <option value="" aria-label="Select One"></option>
+        <option selected value="Y">Yes</option>
+        <option  value="N">No</option>
+        <option  value="UNK">Unknown</option>
+</select>
+        </div>
+    </div></div></div>
+    <div class="form-group col-xs-12 col-sm-5 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="If unknown populate with 999">
+<label
+for="DY_RCVD_TOF_00_0"
+>    <span class="" aria-label="label for Duration of Tofacitinib (days)">
+    Duration of Tofacitinib (days)
+        <span class="fa fa-info-circle icon-super"></span>
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<input
+id="DY_RCVD_TOF_00_0"
+name="DY_RCVD_TOF_00_0"
+class="form-control input-sm input_mask mask_integer"
+onchange=""
+style=""
+value="3"
+type="text"
+aria-label="Duration of Tofacitinib (days)"
+size="18"
+/>        </div>
+    </div></div></div>
+    </div>
+    <div class="row" id="QuestionPackageGrid.O.19.Row" style="padding-left: 0em">
+    <div class="form-group col-xs-12 col-sm-4 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="">
+<label
+for="TXT_OTH_00_0"
+>    <span class="" aria-label="label for Other treatment provided">
+    Other treatment provided
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<select id="TXT_OTH_00_0" name="TXT_OTH_00_0"
+class="form-control input-sm trigger "
+onchange="" aria-label="Other treatment provided">            <option value="" aria-label="Select One"></option>
+        <option selected value="Y">Yes</option>
+        <option  value="N">No</option>
+        <option  value="UNK">Unknown</option>
+</select>
+        </div>
+    </div></div></div>
+    <div class="form-group col-xs-12 col-sm-5 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="">
+<label
+for="TXT_OTH_SPC_00_0"
+>    <span class="" aria-label="label for Specify other treatment type">
+    Specify other treatment type
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<input
+id="TXT_OTH_SPC_00_0"
+name="TXT_OTH_SPC_00_0"
+class="form-control input-sm "
+onchange=""
+style=""
+value="ASDFGHJ"
+type="text"
+aria-label="Specify other treatment type"
+size="18"
+/>        </div>
+    </div></div></div>
+    <div class="form-group col-xs-12 col-sm-5 col-md-3 col-lg-2"><div class="row match-height"><div class="fieldWrapper">
+<div class="col-xs-12 col-sm-12 col-md-12 col-lg-12 " title="If unknown populate with 999">
+<label
+for="DY_TXT_OTH_00_0"
+>    <span class="" aria-label="label for Number of days">
+    Number of days
+        <span class="fa fa-info-circle icon-super"></span>
+</span>
+</label>
+</div>
+        <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+<input
+id="DY_TXT_OTH_00_0"
+name="DY_TXT_OTH_00_0"
+class="form-control input-sm input_mask mask_integer"
+onchange=""
+style=""
+value="3"
+type="text"
+aria-label="Number of days"
+size="18"
+/>        </div>
+    </div></div></div>
+    </div>
+    </div>
+
+      
+  </div>
+
+      <div class="row buttonRow">
+          <div class="col-xs-12 col-sm-12 col-md-12 col-lg-12">
+      
+      
+          
+              
+              <button class="btn btn-default btn-sm" id="saveButton" type="submit" accesskey="S"  onclick="saveForm();">Save</button>
+              
+              <button class="btn btn-default btn-sm" id="quickSaveButton" type="button" >Save & Stay</button>
+          
+              <button class="btn btn-default btn-sm" id="cancelButton" type="button" accesskey="C" onclick="confirmCancel();">Cancel</button>
+              <button type="button" name="OnlineHelp" class="btn btn-default btn-sm" accesskey="H" onclick="return openOnlineHelp('editQuestionPackage');">Help</button>
+
+          
+          </div>
+      </div>
+</div>  
+
+<input type="hidden" name="FormObjectKey" value="1796332">
+<input type="hidden" name="FormCaseID" value="1796256"></form></div>
+
+<form name="cancelForm" id="cancelForm" onsubmit="return submitonce(this)" action="/delaware/editQuestionPackage.do" method="post">
+    <INPUT type="hidden" name="submitType" VALUE="Cancel">
+
+<input type="hidden" name="FormObjectKey" value="1796332">
+<input type="hidden" name="FormCaseID" value="1796256"></form>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<script type="text/javascript">
+// Add form field to track form focus
+appendHiddenElement(getPrimaryForm(), 'focusElement', 'DY_TXT_OTH_00_0');
+appendHiddenElement(getPrimaryForm(), 'scrollx', '528.0499877929688');
+appendHiddenElement(getPrimaryForm(), 'scrolly', '664.5625');
+
+
+var addressAutoCompleteEnabled=true;
+var addressAutoCompleteMinLength=0;
+</script>
+
+<script type="text/javascript">
+var timeoutStartTime = new Date().getTime();
+var isTopLevelWindow=(window.opener==null || window.opener==window);
+var sessionTimeoutId;
+var sessionTimeoutWarningId;
+var recentEdit = false;
+
+sessionTimeoutWarningId = setTimeout("SessionTimeoutWarning(true)", 1685000);
+if(isTopLevelWindow) {
+    sessionTimeoutId = setTimeout("SessionTimeoutRedirection()", 1805000);
+}
+else {
+    sessionTimeoutId = setTimeout("window.close()", 1805000);
+}
+function SessionTimeoutRedirection() {
+    
+    window.location.href='login.do?invalid_session=true';
+    
+}
+
+function SessionTimeoutWarning(showWarning) {
+    var alertSpacer=document.getElementById('timeoutAlertSpacer');
+    if(alertSpacer) {
+        if(showWarning) {
+            $("#timeoutAlert").show().attr('aria-hidden', 'false').attr('role', 'alert');
+        }
+        else {
+            $("#timeoutAlert").hide().attr('aria-hidden', 'true').attr('role', '');
+        }
+        adjustBannerOffset();
+    }
+}
+
+function resetSessionTimeout() {
+    SessionTimeoutWarning(false);
+    clearTimeout(sessionTimeoutId);
+    clearTimeout(sessionTimeoutWarningId);
+
+    sessionTimeoutWarningId = setTimeout("SessionTimeoutWarning(true)", 1685000);
+    if(isTopLevelWindow) {
+        sessionTimeoutId = setTimeout("SessionTimeoutRedirection()", 1805000);
+    }
+    else {
+        sessionTimeoutId = setTimeout("window.close()", 1805000);
+    }
+}
+
+setInterval(function() {
+    if(recentEdit) {
+        //once a minute, if a text area has received an input then refresh server connection
+        $.ajax({
+            url: "CodeLookupServlet",
+            dataType: "json",
+            success: function(jsonResponse) {
+            }
+        });
+        recentEdit = false;
+    }
+}, 60*1000);
+
+function handleRecentEdit() {
+    if(!recentEdit) {
+        recentEdit = true;
+        resetSessionTimeout();
+        if(!isTopLevelWindow) {
+            try {
+                window.opener.resetSessionTimeout();
+            } catch (ex){
+                console.warn("Could not reset session timeout: "+ ex.message);
+            }
+        }
+    }
+}
+$("textarea,input").on({
+    click:handleRecentEdit,
+    change:handleRecentEdit,
+    input:handleRecentEdit
+});
+
+//Monitor the DOM Subtree for added/removed/reordered select options
+$("select").on({
+    click:handleRecentEdit,
+    change:handleRecentEdit,
+    DOMSubtreeModified:handleRecentEdit
+});
+
+// Add XSRF token
+protectForms('xsrfToken', 'YZKPTZTCPJVZPFMVMDMIJKQABNPETZUIZPQCUHTRBFLEPHDKJXPGFUOGPDSJEEVU');
+</script>
+    
+    <span id="timeoutAlertSpacer"></span>
+    
+    <div id="timeoutAlert" style="display:none" class="alert alert-footer alert-danger">
+        Your session is about to expire.  Please save your work or hit refresh to continue working.
+    </div>
+
+
+
+
+
+<SCRIPT type="text/javascript">
+    var momentFormat = 'MM/DD/YYYY hh:mm a';
+    var dateInputMask='##/##/####';
+    var timeInputMask='##:## ~M';
+    var phoneInputMask='(###) ###-####';
+    var ssnInputMask='###-##-####';
+    var postalCodeInputMask='#####-####';
+    var jqueryDateFormat='mm/dd/yy';
+    var jqueryTimeFormat='hh:mm a';
+    var jsApplication='Main';
+    var jsAddressValidation=true;
+    var jsAccessibilityMode=false;
+</SCRIPT>
+
+
+
+
+
+<div id="quickSaveConfirmation">Changes to modified fields saved successfully.</div>
+
+</div>
+</body>
+
+</html>
+
